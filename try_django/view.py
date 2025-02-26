@@ -26,12 +26,10 @@ def video_upload(request):
             video_file = request.FILES["video"]
             unique_id = uuid.uuid4().hex
 
-            # Geçici dizin oluştur
             temp_dir = os.path.join(settings.MEDIA_ROOT, 'temp', unique_id)
             os.makedirs(temp_dir, exist_ok=True)
             temp_video_path = os.path.join(temp_dir, video_file.name)
 
-            # Videoyu geçici olarak kaydet
             with open(temp_video_path, 'wb+') as f:
                 for chunk in video_file.chunks():
                     f.write(chunk)
@@ -46,7 +44,6 @@ def video_upload(request):
             ]
             subprocess.run(cmd_extract, check=True, capture_output=True)
 
-            # Cloudinary'ye video yükle
             upload_result = cloudinary.uploader.upload(
                 temp_video_path,
                 resource_type="video",
@@ -55,7 +52,6 @@ def video_upload(request):
             )
             video_url = upload_result['secure_url']
 
-            # Kareleri Cloudinary'ye yükle
             frame_urls = []
             for frame_name in sorted(os.listdir(frame_dir)):
                 frame_path = os.path.join(frame_dir, frame_name)
@@ -67,7 +63,6 @@ def video_upload(request):
                 )
                 frame_urls.append(frame_upload['secure_url'])
 
-            # Geçici dosyaları sil
             shutil.rmtree(temp_dir)
 
             return JsonResponse({
@@ -90,24 +85,20 @@ def video_trim(request):
             start_time = request.POST.get('start_time')
             end_time = request.POST.get('end_time')
 
-            # Public ID'yi URL'den al
             public_id, _ = cloudinary_url(video_url)
             if 'videos/' not in public_id:
                 raise ValueError("Geçersiz video URL")
 
-            # Geçici dizin oluştur
             temp_dir = os.path.join(settings.MEDIA_ROOT, 'temp', public_id.replace('/', '_'))
             os.makedirs(temp_dir, exist_ok=True)
             temp_video_path = os.path.join(temp_dir, 'original.mp4')
 
-            # Cloudinary'den videoyu indir
             download_url = cloudinary.utils.cloudinary_url(public_id, resource_type="video")[0]
             response = requests.get(download_url)
             response.raise_for_status()
             with open(temp_video_path, 'wb') as f:
                 f.write(response.content)
 
-            # Videoyu kırp
             trimmed_path = os.path.join(temp_dir, 'trimmed.mp4')
             cmd_trim = [
     'ffmpeg', '-i', temp_video_path,
@@ -119,7 +110,6 @@ def video_trim(request):
 
             subprocess.run(cmd_trim, check=True, capture_output=True)
 
-            # Kırpılmışı yükle
             trimmed_public_id = f"trimmed/{public_id}"
             upload_result = cloudinary.uploader.upload(
                 trimmed_path,
@@ -129,11 +119,9 @@ def video_trim(request):
             )
             trimmed_url = upload_result['secure_url']
 
-            # Orijinali ve kareleri sil
             cloudinary.uploader.destroy(public_id, resource_type="video")
             cloudinary.api.delete_resources_by_prefix(f"frames/{public_id}")
 
-            # Temizlik
             shutil.rmtree(temp_dir)
 
             return JsonResponse({'trimmed_url': trimmed_url})
