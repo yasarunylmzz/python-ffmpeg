@@ -77,6 +77,18 @@ def video_upload(request):
 
     return JsonResponse({'error': 'Geçersiz istek'}, status=400)
 
+import os
+import re
+import requests
+import shutil
+import subprocess
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
+from django.conf import settings
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+
 @csrf_exempt
 def video_trim(request):
     if request.method == 'POST':
@@ -85,32 +97,36 @@ def video_trim(request):
             start_time = request.POST.get('start_time')
             end_time = request.POST.get('end_time')
 
-            public_id, _ = cloudinary_url(video_url)
-            if 'videos/' not in public_id:
+            # Public ID'yi URL'den düzgün şekilde al
+            match = re.search(r'/upload/(?:v\d+/)?(.+)$', video_url)
+            if not match:
                 raise ValueError("Geçersiz video URL")
+            public_id = match.group(1).rsplit('.', 1)[0]  # .mp4 uzantısını kaldır
 
             temp_dir = os.path.join(settings.MEDIA_ROOT, 'temp', public_id.replace('/', '_'))
             os.makedirs(temp_dir, exist_ok=True)
             temp_video_path = os.path.join(temp_dir, 'original.mp4')
 
+            # Videoyu Cloudinary'den indir
             download_url = cloudinary.utils.cloudinary_url(public_id, resource_type="video")[0]
             response = requests.get(download_url)
             response.raise_for_status()
             with open(temp_video_path, 'wb') as f:
                 f.write(response.content)
 
+            # Videoyu kırp
             trimmed_path = os.path.join(temp_dir, 'trimmed.mp4')
             cmd_trim = [
-    'ffmpeg', '-i', temp_video_path,
-    '-ss', start_time, '-to', end_time,
-    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28',
-    '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart',
-    trimmed_path
-]
-
+                'ffmpeg', '-i', temp_video_path,
+                '-ss', start_time, '-to', end_time,
+                '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28',
+                '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart',
+                trimmed_path
+            ]
             subprocess.run(cmd_trim, check=True, capture_output=True)
 
-            trimmed_public_id = f"trimmed/{public_id}"
+            # Trimmed videoyu yükle
+            trimmed_public_id = f"trimmed/{public_id}"  # Doğru ID kullanılıyor
             upload_result = cloudinary.uploader.upload(
                 trimmed_path,
                 resource_type="video",
@@ -119,9 +135,11 @@ def video_trim(request):
             )
             trimmed_url = upload_result['secure_url']
 
+            # Orijinali ve kareleri sil
             cloudinary.uploader.destroy(public_id, resource_type="video")
             cloudinary.api.delete_resources_by_prefix(f"frames/{public_id}")
 
+            # Geçici dosyaları temizle
             shutil.rmtree(temp_dir)
 
             return JsonResponse({'trimmed_url': trimmed_url})
