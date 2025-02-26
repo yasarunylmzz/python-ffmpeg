@@ -110,10 +110,13 @@ def video_trim(request):
             # Videoyu kırp
             trimmed_path = os.path.join(temp_dir, 'trimmed.mp4')
             cmd_trim = [
-                'ffmpeg', '-i', temp_video_path,
-                '-ss', start_time, '-to', end_time,
-                '-c:v', 'libx264', '-c:a', 'aac', trimmed_path
-            ]
+    'ffmpeg', '-i', temp_video_path,
+    '-ss', start_time, '-to', end_time,
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28',
+    '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart',
+    trimmed_path
+]
+
             subprocess.run(cmd_trim, check=True, capture_output=True)
 
             # Kırpılmışı yükle
